@@ -4,11 +4,9 @@ namespace Illuminate\Foundation\Auth;
 
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Support\Facades\Lang;
-use Illuminate\Validation\ValidationException;
 
 trait ThrottlesLogins
 {
@@ -21,7 +19,7 @@ trait ThrottlesLogins
     protected function hasTooManyLoginAttempts(Request $request)
     {
         return $this->limiter()->tooManyAttempts(
-            $this->throttleKey($request), $this->maxAttempts()
+            $this->throttleKey($request), $this->maxAttempts(), $this->decayMinutes()
         );
     }
 
@@ -33,18 +31,14 @@ trait ThrottlesLogins
      */
     protected function incrementLoginAttempts(Request $request)
     {
-        $this->limiter()->hit(
-            $this->throttleKey($request), $this->decayMinutes() * 60
-        );
+        $this->limiter()->hit($this->throttleKey($request));
     }
 
     /**
      * Redirect the user after determining they are locked out.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return void
-     *
-     * @throws \Illuminate\Validation\ValidationException
+     * @return \Illuminate\Http\RedirectResponse
      */
     protected function sendLockoutResponse(Request $request)
     {
@@ -52,9 +46,17 @@ trait ThrottlesLogins
             $this->throttleKey($request)
         );
 
-        throw ValidationException::withMessages([
-            $this->username() => [Lang::get('auth.throttle', ['seconds' => $seconds])],
-        ])->status(Response::HTTP_TOO_MANY_REQUESTS);
+        $message = Lang::get('auth.throttle', ['seconds' => $seconds]);
+
+        $errors = [$this->username() => $message];
+
+        if ($request->expectsJson()) {
+            return response()->json($errors, 423);
+        }
+
+        return redirect()->back()
+            ->withInput($request->only($this->username(), 'remember'))
+            ->withErrors($errors);
     }
 
     /**

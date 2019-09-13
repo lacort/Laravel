@@ -39,12 +39,8 @@ class AuthenticateSession
             return $next($request);
         }
 
-        if ($this->auth->viaRemember()) {
-            $passwordHash = explode('|', $request->cookies->get($this->auth->getRecallerName()))[2];
-
-            if ($passwordHash != $request->user()->getAuthPassword()) {
-                $this->logout($request);
-            }
+        if (! $request->session()->has('password_hash') && $this->auth->viaRemember()) {
+            $this->logout($request);
         }
 
         if (! $request->session()->has('password_hash')) {
@@ -87,7 +83,7 @@ class AuthenticateSession
      */
     protected function logout($request)
     {
-        $this->auth->logoutCurrentDevice();
+        $this->auth->logout();
 
         $request->session()->flush();
 

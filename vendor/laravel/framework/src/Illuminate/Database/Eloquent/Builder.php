@@ -3,25 +3,21 @@
 namespace Illuminate\Database\Eloquent;
 
 use Closure;
-use Exception;
 use BadMethodCallException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Contracts\Support\Arrayable;
-use Illuminate\Support\Traits\ForwardsCalls;
 use Illuminate\Database\Concerns\BuildsQueries;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
- * @property-read HigherOrderBuilderProxy $orWhere
- *
  * @mixin \Illuminate\Database\Query\Builder
  */
 class Builder
 {
-    use BuildsQueries, Concerns\QueriesRelationships, ForwardsCalls;
+    use BuildsQueries, Concerns\QueriesRelationships;
 
     /**
      * The base query builder instance.
@@ -71,8 +67,8 @@ class Builder
      * @var array
      */
     protected $passthru = [
-        'insert', 'insertOrIgnore', 'insertGetId', 'insertUsing', 'getBindings', 'toSql', 'dump', 'dd',
-        'exists', 'doesntExist', 'count', 'min', 'max', 'avg', 'average', 'sum', 'getConnection',
+        'insert', 'insertGetId', 'getBindings', 'toSql',
+        'exists', 'count', 'min', 'max', 'avg', 'sum', 'getConnection',
     ];
 
     /**
@@ -156,12 +152,12 @@ class Builder
      */
     public function withoutGlobalScopes(array $scopes = null)
     {
-        if (! is_array($scopes)) {
-            $scopes = array_keys($this->scopes);
-        }
-
-        foreach ($scopes as $scope) {
-            $this->withoutGlobalScope($scope);
+        if (is_array($scopes)) {
+            foreach ($scopes as $scope) {
+                $this->withoutGlobalScope($scope);
+            }
+        } else {
+            $this->scopes = [];
         }
 
         return $this;
@@ -195,35 +191,20 @@ class Builder
     }
 
     /**
-     * Add a where clause on the primary key to the query.
-     *
-     * @param  mixed  $id
-     * @return $this
-     */
-    public function whereKeyNot($id)
-    {
-        if (is_array($id) || $id instanceof Arrayable) {
-            $this->query->whereNotIn($this->model->getQualifiedKeyName(), $id);
-
-            return $this;
-        }
-
-        return $this->where($this->model->getQualifiedKeyName(), '!=', $id);
-    }
-
-    /**
      * Add a basic where clause to the query.
      *
-     * @param  \Closure|string|array  $column
-     * @param  mixed   $operator
-     * @param  mixed   $value
+     * @param  string|array|\Closure  $column
+     * @param  string  $operator
+     * @param  mixed  $value
      * @param  string  $boolean
      * @return $this
      */
     public function where($column, $operator = null, $value = null, $boolean = 'and')
     {
         if ($column instanceof Closure) {
-            $column($query = $this->model->newModelQuery());
+            $query = $this->model->newQueryWithoutScopes();
+
+            $column($query);
 
             $this->query->addNestedWhereQuery($query->getQuery(), $boolean);
         } else {
@@ -236,52 +217,14 @@ class Builder
     /**
      * Add an "or where" clause to the query.
      *
-     * @param  \Closure|array|string  $column
-     * @param  mixed  $operator
+     * @param  string|array|\Closure  $column
+     * @param  string  $operator
      * @param  mixed  $value
      * @return \Illuminate\Database\Eloquent\Builder|static
      */
     public function orWhere($column, $operator = null, $value = null)
     {
-        [$value, $operator] = $this->query->prepareValueAndOperator(
-            $value, $operator, func_num_args() === 2
-        );
-
         return $this->where($column, $operator, $value, 'or');
-    }
-
-    /**
-     * Add an "order by" clause for a timestamp to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function latest($column = null)
-    {
-        if (is_null($column)) {
-            $column = $this->model->getCreatedAtColumn() ?? 'created_at';
-        }
-
-        $this->query->latest($column);
-
-        return $this;
-    }
-
-    /**
-     * Add an "order by" clause for a timestamp to the query.
-     *
-     * @param  string  $column
-     * @return $this
-     */
-    public function oldest($column = null)
-    {
-        if (is_null($column)) {
-            $column = $this->model->getCreatedAtColumn() ?? 'created_at';
-        }
-
-        $this->query->oldest($column);
-
-        return $this;
     }
 
     /**
@@ -332,14 +275,12 @@ class Builder
     /**
      * Find multiple models by their primary keys.
      *
-     * @param  \Illuminate\Contracts\Support\Arrayable|array  $ids
+     * @param  array  $ids
      * @param  array  $columns
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function findMany($ids, $columns = ['*'])
     {
-        $ids = $ids instanceof Arrayable ? $ids->toArray() : $ids;
-
         if (empty($ids)) {
             return $this->model->newCollection();
         }
@@ -352,7 +293,7 @@ class Builder
      *
      * @param  mixed  $id
      * @param  array  $columns
-     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static|static[]
+     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
      */
@@ -361,7 +302,7 @@ class Builder
         $result = $this->find($id, $columns);
 
         if (is_array($id)) {
-            if (count($result) === count(array_unique($id))) {
+            if (count($result) == count(array_unique($id))) {
                 return $result;
             }
         } elseif (! is_null($result)) {
@@ -378,7 +319,7 @@ class Builder
      *
      * @param  mixed  $id
      * @param  array  $columns
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function findOrNew($id, $columns = ['*'])
     {
@@ -394,7 +335,7 @@ class Builder
      *
      * @param  array  $attributes
      * @param  array  $values
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function firstOrNew(array $attributes, array $values = [])
     {
@@ -410,7 +351,7 @@ class Builder
      *
      * @param  array  $attributes
      * @param  array  $values
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function firstOrCreate(array $attributes, array $values = [])
     {
@@ -428,7 +369,7 @@ class Builder
      *
      * @param  array  $attributes
      * @param  array  $values
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function updateOrCreate(array $attributes, array $values = [])
     {
@@ -513,7 +454,7 @@ class Builder
      * Get the hydrated models without eager loading.
      *
      * @param  array  $columns
-     * @return \Illuminate\Database\Eloquent\Model[]|static[]
+     * @return \Illuminate\Database\Eloquent\Model[]
      */
     public function getModels($columns = ['*'])
     {
@@ -583,7 +524,7 @@ class Builder
         // and error prone. We don't want constraints because we add eager ones.
         $relation = Relation::noConstraints(function () use ($name) {
             try {
-                return $this->getModel()->newInstance()->$name();
+                return $this->getModel()->{$name}();
             } catch (BadMethodCallException $e) {
                 throw RelationNotFoundException::make($this->getModel(), $name);
             }
@@ -636,15 +577,59 @@ class Builder
     }
 
     /**
-     * Get a lazy collection for the given query.
+     * Get a generator for the given query.
      *
-     * @return \Illuminate\Support\LazyCollection
+     * @return \Generator
      */
     public function cursor()
     {
-        return $this->applyScopes()->query->cursor()->map(function ($record) {
-            return $this->newModelInstance()->newFromBuilder($record);
-        });
+        foreach ($this->applyScopes()->query->cursor() as $record) {
+            yield $this->model->newFromBuilder($record);
+        }
+    }
+
+    /**
+     * Chunk the results of a query by comparing numeric IDs.
+     *
+     * @param  int  $count
+     * @param  callable  $callback
+     * @param  string  $column
+     * @param  string|null  $alias
+     * @return bool
+     */
+    public function chunkById($count, callable $callback, $column = null, $alias = null)
+    {
+        $column = is_null($column) ? $this->getModel()->getKeyName() : $column;
+
+        $alias = is_null($alias) ? $column : $alias;
+
+        $lastId = 0;
+
+        do {
+            $clone = clone $this;
+
+            // We'll execute the query for the given page and get the results. If there are
+            // no results we can just break and return from here. When there are results
+            // we will call the callback with the current chunk of these results here.
+            $results = $clone->forPageAfterId($count, $lastId, $column)->get();
+
+            $countResults = $results->count();
+
+            if ($countResults == 0) {
+                break;
+            }
+
+            // On each chunk result set, we will pass them to the callback and then let the
+            // developer take care of everything within the callback, which allows us to
+            // keep the memory low for spinning through large result sets for working.
+            if ($callback($results) === false) {
+                return false;
+            }
+
+            $lastId = $results->last()->{$alias};
+        } while ($countResults == $count);
+
+        return true;
     }
 
     /**
@@ -778,7 +763,7 @@ class Builder
      * Increment a column's value by a given amount.
      *
      * @param  string  $column
-     * @param  float|int  $amount
+     * @param  int  $amount
      * @param  array  $extra
      * @return int
      */
@@ -793,7 +778,7 @@ class Builder
      * Decrement a column's value by a given amount.
      *
      * @param  string  $column
-     * @param  float|int  $amount
+     * @param  int  $amount
      * @param  array  $extra
      * @return int
      */
@@ -812,27 +797,14 @@ class Builder
      */
     protected function addUpdatedAtColumn(array $values)
     {
-        if (! $this->model->usesTimestamps() ||
-            is_null($this->model->getUpdatedAtColumn())) {
+        if (! $this->model->usesTimestamps()) {
             return $values;
         }
 
-        $column = $this->model->getUpdatedAtColumn();
-
-        $values = array_merge(
-            [$column => $this->model->freshTimestampString()],
-            $values
+        return Arr::add(
+            $values, $this->model->getUpdatedAtColumn(),
+            $this->model->freshTimestampString()
         );
-
-        $segments = preg_split('/\s+as\s+/i', $this->query->from);
-
-        $qualifiedColumn = end($segments).'.'.$column;
-
-        $values[$qualifiedColumn] = $values[$column];
-
-        unset($values[$column]);
-
-        return $values;
     }
 
     /**
@@ -875,23 +847,23 @@ class Builder
     /**
      * Call the given local model scopes.
      *
-     * @param  array|string  $scopes
-     * @return static|mixed
+     * @param  array  $scopes
+     * @return mixed
      */
-    public function scopes($scopes)
+    public function scopes(array $scopes)
     {
         $builder = $this;
 
-        foreach (Arr::wrap($scopes) as $scope => $parameters) {
+        foreach ($scopes as $scope => $parameters) {
             // If the scope key is an integer, then the scope was passed as the value and
             // the parameter list is empty, so we will format the scope name and these
             // parameters here. Then, we'll be ready to call the scope on the model.
             if (is_int($scope)) {
-                [$scope, $parameters] = [$parameters, []];
+                list($scope, $parameters) = [$parameters, []];
             }
 
             // Next we'll pass the scope callback to the callScope method which will take
-            // care of grouping the "wheres" properly so the logical order doesn't get
+            // care of groping the "wheres" correctly so the logical order doesn't get
             // messed up when adding scopes. Then we'll return back out the builder.
             $builder = $builder->callScope(
                 [$this->model, 'scope'.ucfirst($scope)],
@@ -905,7 +877,7 @@ class Builder
     /**
      * Apply the scopes to the Eloquent builder instance and return it.
      *
-     * @return static
+     * @return \Illuminate\Database\Eloquent\Builder|static
      */
     public function applyScopes()
     {
@@ -920,7 +892,7 @@ class Builder
                 continue;
             }
 
-            $builder->callScope(function (self $builder) use ($scope) {
+            $builder->callScope(function (Builder $builder) use ($scope) {
                 // If the scope is a Closure we will just go ahead and call the scope with the
                 // builder instance. The "callScope" method will properly group the clauses
                 // that are added to this query so "where" clauses maintain proper logic.
@@ -959,7 +931,7 @@ class Builder
         $originalWhereCount = is_null($query->wheres)
                     ? 0 : count($query->wheres);
 
-        $result = $scope(...array_values($parameters)) ?? $this;
+        $result = $scope(...array_values($parameters)) ?: $this;
 
         if (count((array) $query->wheres) > $originalWhereCount) {
             $this->addNewWheresWithinGroup($query, $originalWhereCount);
@@ -1066,7 +1038,7 @@ class Builder
      * Create a new instance of the model being queried.
      *
      * @param  array  $attributes
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function newModelInstance($attributes = [])
     {
@@ -1086,22 +1058,22 @@ class Builder
         $results = [];
 
         foreach ($relations as $name => $constraints) {
-            // If the "name" value is a numeric key, we can assume that no
-            // constraints have been specified. We'll just put an empty
-            // Closure there, so that we can treat them all the same.
+            // If the "relation" value is actually a numeric key, we can assume that no
+            // constraints have been specified for the eager load and we'll just put
+            // an empty Closure with the loader so that we can treat all the same.
             if (is_numeric($name)) {
                 $name = $constraints;
 
-                [$name, $constraints] = Str::contains($name, ':')
+                list($name, $constraints) = Str::contains($name, ':')
                             ? $this->createSelectWithConstraint($name)
                             : [$name, function () {
                                 //
                             }];
             }
 
-            // We need to separate out any nested includes, which allows the developers
+            // We need to separate out any nested includes. Which allows the developers
             // to load deep relationships using "dots" without stating each level of
-            // the relationship with its own key in the array of eager-load names.
+            // the relationship with its own key in the array of eager load names.
             $results = $this->addNestedWiths($name, $results);
 
             $results[$name] = $constraints;
@@ -1207,19 +1179,9 @@ class Builder
     }
 
     /**
-     * Get the default key name of the table.
-     *
-     * @return string
-     */
-    protected function defaultKeyName()
-    {
-        return $this->getModel()->getKeyName();
-    }
-
-    /**
      * Get the model instance being queried.
      *
-     * @return \Illuminate\Database\Eloquent\Model|static
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function getModel()
     {
@@ -1242,17 +1204,6 @@ class Builder
     }
 
     /**
-     * Qualify the given column name by the model's table.
-     *
-     * @param  string  $column
-     * @return string
-     */
-    public function qualifyColumn($column)
-    {
-        return $this->model->qualifyColumn($column);
-    }
-
-    /**
      * Get the given macro by name.
      *
      * @param  string  $name
@@ -1261,23 +1212,6 @@ class Builder
     public function getMacro($name)
     {
         return Arr::get($this->localMacros, $name);
-    }
-
-    /**
-     * Dynamically access builder proxies.
-     *
-     * @param  string  $key
-     * @return mixed
-     *
-     * @throws \Exception
-     */
-    public function __get($key)
-    {
-        if ($key === 'orWhere') {
-            return new HigherOrderBuilderProxy($this, $key);
-        }
-
-        throw new Exception("Property [{$key}] does not exist on the Eloquent builder instance.");
     }
 
     /**
@@ -1301,12 +1235,12 @@ class Builder
             return $this->localMacros[$method](...$parameters);
         }
 
-        if (isset(static::$macros[$method])) {
-            if (static::$macros[$method] instanceof Closure) {
-                return call_user_func_array(static::$macros[$method]->bindTo($this, static::class), $parameters);
-            }
+        if (isset(static::$macros[$method]) and static::$macros[$method] instanceof Closure) {
+            return call_user_func_array(static::$macros[$method]->bindTo($this, static::class), $parameters);
+        }
 
-            return call_user_func_array(static::$macros[$method], $parameters);
+        if (isset(static::$macros[$method])) {
+            return call_user_func_array(static::$macros[$method]->bindTo($this, static::class), $parameters);
         }
 
         if (method_exists($this->model, $scope = 'scope'.ucfirst($method))) {
@@ -1317,7 +1251,7 @@ class Builder
             return $this->toBase()->{$method}(...$parameters);
         }
 
-        $this->forwardCallTo($this->query, $method, $parameters);
+        $this->query->{$method}(...$parameters);
 
         return $this;
     }
@@ -1340,7 +1274,7 @@ class Builder
         }
 
         if (! isset(static::$macros[$method])) {
-            static::throwBadMethodCallException($method);
+            throw new BadMethodCallException("Method {$method} does not exist.");
         }
 
         if (static::$macros[$method] instanceof Closure) {

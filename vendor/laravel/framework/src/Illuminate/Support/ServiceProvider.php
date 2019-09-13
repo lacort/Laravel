@@ -3,7 +3,6 @@
 namespace Illuminate\Support;
 
 use Illuminate\Console\Application as Artisan;
-use Illuminate\Contracts\Support\DeferrableProvider;
 
 abstract class ServiceProvider
 {
@@ -15,38 +14,35 @@ abstract class ServiceProvider
     protected $app;
 
     /**
+     * Indicates if loading of the provider is deferred.
+     *
+     * @var bool
+     */
+    protected $defer = false;
+
+    /**
      * The paths that should be published.
      *
      * @var array
      */
-    public static $publishes = [];
+    protected static $publishes = [];
 
     /**
      * The paths that should be published by group.
      *
      * @var array
      */
-    public static $publishGroups = [];
+    protected static $publishGroups = [];
 
     /**
      * Create a new service provider instance.
      *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @param  \Illuminate\Contracts\Foundation\Application $app
      * @return void
      */
     public function __construct($app)
     {
         $this->app = $app;
-    }
-
-    /**
-     * Register any application services.
-     *
-     * @return void
-     */
-    public function register()
-    {
-        //
     }
 
     /**
@@ -58,11 +54,9 @@ abstract class ServiceProvider
      */
     protected function mergeConfigFrom($path, $key)
     {
-        if (! $this->app->configurationIsCached()) {
-            $this->app['config']->set($key, array_merge(
-                require $path, $this->app['config']->get($key, [])
-            ));
-        }
+        $config = $this->app['config']->get($key, []);
+
+        $this->app['config']->set($key, array_merge(require $path, $config));
     }
 
     /**
@@ -81,18 +75,14 @@ abstract class ServiceProvider
     /**
      * Register a view file namespace.
      *
-     * @param  string|array  $path
+     * @param  string  $path
      * @param  string  $namespace
      * @return void
      */
     protected function loadViewsFrom($path, $namespace)
     {
-        if (is_array($this->app->config['view']['paths'])) {
-            foreach ($this->app->config['view']['paths'] as $viewPath) {
-                if (is_dir($appPath = $viewPath.'/vendor/'.$namespace)) {
-                    $this->app['view']->addNamespace($namespace, $appPath);
-                }
-            }
+        if (is_dir($appPath = $this->app->resourcePath().'/views/vendor/'.$namespace)) {
+            $this->app['view']->addNamespace($namespace, $appPath);
         }
 
         $this->app['view']->addNamespace($namespace, $path);
@@ -108,17 +98,6 @@ abstract class ServiceProvider
     protected function loadTranslationsFrom($path, $namespace)
     {
         $this->app['translator']->addNamespace($namespace, $path);
-    }
-
-    /**
-     * Register a JSON translation file path.
-     *
-     * @param  string  $path
-     * @return void
-     */
-    protected function loadJsonTranslationsFrom($path)
-    {
-        $this->app['translator']->addJsonPath($path);
     }
 
     /**
@@ -140,16 +119,16 @@ abstract class ServiceProvider
      * Register paths to be published by the publish command.
      *
      * @param  array  $paths
-     * @param  mixed  $groups
+     * @param  string  $group
      * @return void
      */
-    protected function publishes(array $paths, $groups = null)
+    protected function publishes(array $paths, $group = null)
     {
         $this->ensurePublishArrayInitialized($class = static::class);
 
         static::$publishes[$class] = array_merge(static::$publishes[$class], $paths);
 
-        foreach ((array) $groups as $group) {
+        if ($group) {
             $this->addPublishGroup($group, $paths);
         }
     }
@@ -240,26 +219,6 @@ abstract class ServiceProvider
     }
 
     /**
-     * Get the service providers available for publishing.
-     *
-     * @return array
-     */
-    public static function publishableProviders()
-    {
-        return array_keys(static::$publishes);
-    }
-
-    /**
-     * Get the groups available for publishing.
-     *
-     * @return array
-     */
-    public static function publishableGroups()
-    {
-        return array_keys(static::$publishGroups);
-    }
-
-    /**
      * Register the package's custom Artisan commands.
      *
      * @param  array|mixed  $commands
@@ -301,6 +260,18 @@ abstract class ServiceProvider
      */
     public function isDeferred()
     {
-        return $this instanceof DeferrableProvider;
+        return $this->defer;
+    }
+
+    /**
+     * Get a list of files that should be compiled for the package.
+     *
+     * @deprecated
+     *
+     * @return array
+     */
+    public static function compiles()
+    {
+        return [];
     }
 }

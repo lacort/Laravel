@@ -1,18 +1,9 @@
-<?php declare(strict_types=1);
-/*
- * This file is part of PHPUnit.
- *
- * (c) Sebastian Bergmann <sebastian@phpunit.de>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-use PHPUnit\Framework\TestCase;
+<?php
 
-class CoverageMethodOneLineAnnotationTest extends TestCase
+class CoverageMethodOneLineAnnotationTest extends PHPUnit_Framework_TestCase
 {
     /** @covers CoveredClass::publicMethod */
-    public function testSomething(): void
+    public function testSomething()
     {
         $o = new CoveredClass;
         $o->publicMethod();
